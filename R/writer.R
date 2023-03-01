@@ -500,13 +500,20 @@ wrSVfix <- function() {
              '# Plot gene expression bubbleplot / heatmap \n',
              'scBubbHeat <- function(inpConf, inpMeta, inp, inpGrp, inpPlt, \n',
              '                       inpsub1, inpsub2, inpH5, inpGene, inpScl, inpRow, inpCol, \n',
-             '                       inpcols, inpfsz, save = FALSE){{ \n',
+             '                       inpcols, inpfsz, save = FALSE, split.by = NULL){{ \n', #splitby Dave
              '  if(is.null(inpsub1)){{inpsub1 = inpConf$UI[1]}} \n',
              '  # Identify genes that are in our dataset \n',
              '  geneList = scGeneList(inp, inpGene) \n',
              '  geneList = geneList[present == TRUE] \n',
              '  shiny::validate(need(nrow(geneList) <= 50, "More than 50 genes to plot! Please reduce the gene list!")) \n',
-             '  shiny::validate(need(nrow(geneList) > 1, "Please input at least 2 genes to plot!")) \n',
+			 
+			 'if (length(splitBy) == 0) \n',  # Dave :: If there is not splitBy group defined check minimum number of genes
+			 '{ shiny::validate(need(nrow(geneList) > 1, "Please input at least 2 genes to plot!"))  } \n',#dave
+			 'else \n',#dave
+			 '{  shiny::validate(need(inpGrp != splitBy, "Group and split cannot be the same !"))  }\n',#Dave
+ 
+			 
+           #  '  shiny::validate(need(nrow(geneList) > 1, "Please input at least 2 genes to plot!")) \n', #remove this
              '   \n',
              '  # Prepare ggData \n',
              '  h5file <- H5File$new(inpH5, mode = "r") \n',
@@ -515,7 +522,10 @@ wrSVfix <- function() {
              '  for(iGene in geneList$gene){{ \n',
              '    tmp = inpMeta[, c("sampleID", inpConf[UI == inpsub1]$ID), with = FALSE] \n',
              '    colnames(tmp) = c("sampleID", "sub") \n',
-             '    tmp$grpBy = inpMeta[[inpConf[UI == inpGrp]$ID]] \n',
+             #'    tmp$grpBy = inpMeta[[inpConf[UI == inpGrp]$ID]] \n', remove this
+			 'if (length(splitBy) != 0)	\n',							# Dave
+			 '{ tmp$splitBy = inpMeta[[inpConf[UI == splitBy]$ID]] } \n', # Dave 
+
              '    tmp$geneName = iGene \n',
              '    tmp$val = h5data$read(args = list(inpGene[iGene], quote(expr=))) \n',
              '    ggData = rbindlist(list(ggData, tmp)) \n',
@@ -528,8 +538,10 @@ wrSVfix <- function() {
              '   \n',
              '  # Aggregate \n',
              '  ggData$val = expm1(ggData$val) \n',
+			 '  selectedCols <- if (length(splitBy) == 0) c("geneName", "grpBy")  else c("geneName", "grpBy", "splitBy") \n',# Dave
              '  ggData = ggData[, .(val = mean(val), prop = sum(val>0) / length(sampleID)), \n',
-             '                  by = c("geneName", "grpBy")] \n',
+			  ' by = selectedCols]  \n', # Dave
+             #'                  by = c("geneName", "grpBy")] \n', #remove this
              '  ggData$val = log1p(ggData$val) \n',
              '   \n',
              '  # Scale if required \n',
@@ -542,6 +554,10 @@ wrSVfix <- function() {
              '  # hclust row/col if necessary \n',
              '  ggMat = dcast.data.table(ggData, geneName~grpBy, value.var = "val") \n',
              '  tmp = ggMat$geneName \n',
+			 'if (length(splitBy) != 0) \n', # Dave
+			 '{ ggMat = dcast.data.table(ggData, splitBy~grpBy, value.var = "val") \n',# Dave
+			 'tmp = ggMat$splitBy \n',# Dave
+			 '} \n',
              '  ggMat = as.matrix(ggMat[, -1]) \n',
              '  rownames(ggMat) = tmp \n',
              '  if(inpRow){{ \n',
@@ -675,6 +691,10 @@ wrSVmain <- function(prefix, subst = "") {
              '                       selected = {prefix}conf[is.na(fID)]$UI[1], options = list( \n',
              '                         maxOptions = length({prefix}conf[is.na(fID)]$UI) + 3, \n',
              '                         create = TRUE, persist = TRUE, render = I(optCrt))) \n',
+			 	# Dave added following function	for sc1d2inp1			 
+			 'updateSelectizeInput(session, "{prefix}d2inp", choices = names({prefix}gene), server = TRUE,\n', #dave 
+			 '							selected = {prefix}def$gene1, options = list(  \n', #dave
+             '            maxOptions = 7, create = TRUE, persist = TRUE, render = I(optCrt))) \n', #dave 
              ' \n',
              ' \n',
              '  ### Plots for tab a1 \n',
@@ -1149,7 +1169,78 @@ wrSVmain <- function(prefix, subst = "") {
              '                        input${prefix}d1sub1, input${prefix}d1sub2, "{prefix}gexpr.h5", {prefix}gene, \n',
              '                        input${prefix}d1scl, input${prefix}d1row, input${prefix}d1col, \n',
              '                        input${prefix}d1cols, input${prefix}d1fsz, save = TRUE) ) \n',
-             '  }}) \n',
+            
+			#DAVE INSERT for tab panel 
+
+ ### Plots for tab d2   DAVE 
+  
+   
+			'output${prefix}sub1.ui <- renderUI({ \n',
+			'sub = strsplit({prefix}conf[UI == input${prefix}sub1]$fID, "\\|")[[1]] \n',
+			'checkboxGroupInput("{prefix}sub2", "Select which cells to show", inline = TRUE, \n',
+            '           choices = sub, selected = sub) \n',
+			'})\n', 
+			'observeEvent(input${prefix}sub1non, { \n',
+			'sub = strsplit({prefix}conf[UI == input${prefix}sub1]$fID, "\\|")[[1]] \n',
+			'updateCheckboxGroupInput(session, inputId = "{prefix}sub2", label = "Select which cells to show", \n',
+            '                 choices = sub, selected = NULL, inline = TRUE) \n',
+			'}) \n', 
+			'observeEvent(input${prefix}sub1all, { \n',
+			'sub = strsplit({prefix}conf[UI == input${prefix}sub1]$fID, "\\|")[[1]] \n',
+			'updateCheckboxGroupInput(session, inputId = "{prefix}sub2", label = "Select which cells to show", \n',
+			'            choices = sub, selected = sub, inline = TRUE) \n',
+			'})\n',
+			'output${prefix}oupTxt <- renderUI({ \n',
+			'geneList = scGeneList(input${prefix}inp, {prefix}gene) \n',
+			'if(nrow(geneList) > 50){ \n',
+			'HTML("More than 50 input genes! Please reduce the gene list!") \n',
+			'} else { \n',
+			'oup = paste0(nrow(geneList[present == TRUE]), " genes OK and will be plotted") \n',
+			'if(nrow(geneList[present == FALSE]) > 0){ \n',
+			'oup = paste0(oup, "<br/>", \n',
+            '         nrow(geneList[present == FALSE]), " genes not found (", \n',
+            '         paste0(geneList[present == FALSE]$gene, collapse = ", "), ")") \n',
+			'}\n', 
+			'#HTML(oup) \n',
+			'HTML("") \n',
+			'} \n',
+			'}) \n',
+			'output${prefix}oup <- renderPlot({ \n',
+			'scBubbHeat({prefix}conf, {prefix}meta, input${prefix}inp, input${prefix}grp, input${prefix}plt, \n',
+            ' input${prefix}sub1, input${prefix}sub2, "{prefix}gexpr.h5", {prefix}gene, \n',
+            ' input${prefix}scl, input${prefix}row, input${prefix}col, \n',
+            ' input${prefix}cols, input${prefix}fsz, splitBy=input${prefix}split) \n',
+			'})\n', 
+			'output${prefix}oup.ui <- renderUI({ \n',
+			'plotOutput("{prefix}oup", height = pList3[input${prefix}psz]) \n',
+			'})\n', 
+			'output${prefix}oup.pdf <- downloadHandler( \n',
+			'filename = function() { paste0("{prefix}",input${prefix}plt,"_",input${prefix}grp,".pdf") }, \n',
+			'content = function(file) { ggsave( \n',
+			'file, device = "pdf", height = input${prefix}oup.h, width = input${prefix}oup.w, \n',
+			'plot = scBubbHeat({prefix}conf, {prefix}meta, input${prefix}inp, input${prefix}grp, input${prefix}plt, \n',
+            '            input${prefix}sub1, input${prefix}sub2, "{prefix}gexpr.h5", {prefix}gene, \n',
+            '           input${prefix}scl, input${prefix}row, input${prefix}col, \n',
+            '           input${prefix}cols, input${prefix}fsz, save = TRUE, splitBy=input${prefix}split) ) \n',
+			'})\n', 
+			'output${prefix}oup.png <- downloadHandler( \n',
+			'filename = function() { paste0("{prefix}",input${prefix}plt,"_",input${prefix}grp,".png") }, \n',
+			'content = function(file) { ggsave( \n',
+			'file, device = "png", height = input${prefix}oup.h, width = input${prefix}oup.w, \n',
+			'plot = scBubbHeat({prefix}conf, {prefix}meta, input${prefix}inp, input${prefix}grp, input${prefix}plt, \n',
+            '			input${prefix}sub1, input${prefix}sub2, "{prefix}gexpr.h5", {prefix}gene, \n',
+			'			input${prefix}scl, input${prefix}row, input${prefix}col, \n',
+			'			input${prefix}cols, input${prefix}fsz, save = TRUE, splitBy=input${prefix}split) ) \n',
+			'}) \n',
+   
+
+			#DAVE END INSERT
+
+
+
+
+
+			'  }}) \n',#close server function
              '   \n',
              '   \n',
              '   \n')
@@ -1938,6 +2029,102 @@ wrUImain <- function(prefix, subst = "", ptsiz = "1.25") {
              '      )  # End of column (6 space) \n',
              '    )    # End of fluidRow (4 space) \n',
              '  )      # End of tab (2 space) \n',
+			 
+			 #INSERT DAVE New tab panel
+			 ### Dave added Tab1.d2
+    ### Tab1.d2: Single gene expr 
+			' tabPanel( \n',
+			' HTML("Single Gene analysis"), \n',
+			' h4("Single gene expression bubbleplot / heatmap"), \n'
+			' "In this tab, users can visualise the gene expression patterns of a", \n',
+			' "SINGLE gene grouped by categorical cell information (e.g. library / cluster).", br(),\n',
+			' "The normalised expression are averaged, log-transformed and then plotted.", \n',
+			'br(),br(),\n',
+			'fluidRow( \n',
+			' column( \n',
+			'3, style="border-right: 2px solid black", \n\n\n',
+		 
+		 
+			'selectInput("{prefix}d2inp", "Gene name:", choices=NULL) %>%  \n',
+			' helper(type = "inline", size = "m", fade = TRUE, \n',
+		    '      title = "Gene expression to colour cells by", \n',
+		    '      content = c("Select gene to colour cells by gene expression", \n',
+			'				paste0("- Gene expression are coloured in a ", \n',
+			'						"White-Red colour scheme which can be ",  \n',
+			'						"changed in the plot controls"))) , \n\n\n',
+					 
+							 
+			'selectInput("{prefix}d2grp", "Group by:", \n',
+			'		choices = {prefix}conf[grp == TRUE]$UI,\n',
+			'		selected = {prefix}conf[grp == TRUE]$UI[1]) %>% \n',
+			' 		helper(type = "inline", size = "m", fade = TRUE,\n',
+			'		title = "Cell information to group cells by",\n',
+			'	content = c("Select categorical cell information to group cells by", \n',
+			'				"- Single cells are grouped by this categorical covariate",\n',
+			'				"- Plotted as the X-axis of the bubbleplot / heatmap")),\n\n\n',
+		 
+		 
+			'selectInput("{prefix}d2split", "Split by:",\n',
+			'		choices = {prefix}conf[grp == TRUE]$UI,\n',
+			' selected = {prefix}conf[grp == TRUE]$UI[1]) %>% \n',
+			' helper(type = "inline", size = "m", fade = TRUE, \n',
+			' title = "Cell information to split cells by", \n',
+			'	content = c("Select categorical cell information to split cells by", \n',
+			'		"- Single cells are grouped by this categorical covariate", \n',
+			'	"- Plotted as the X-axis of the bubbleplot / heatmap")), \n\n\n',
+		 
+		 
+			'radioButtons("{prefix}d2plt", "Plot type:", \n',
+			'	choices = c("Bubbleplot", "Heatmap"), \n',
+			'	selected = "Bubbleplot", inline = TRUE), \n',
+			'	checkboxInput("{prefix}d2scl", "Scale gene expression", value = TRUE), \n',
+			'	checkboxInput("{prefix}d2row", "Cluster rows (genes)", value = TRUE), \n',
+			'	checkboxInput("{prefix}d2col", "Cluster columns (samples)", value = FALSE), \n',
+			'	br(),\n',
+			'	actionButton("{prefix}d2togL", "Toggle to subset cells"), \n',
+			'	conditionalPanel( \n',
+			'	condition = "input.{prefix}d2togL % 2 == 1", \n',
+			'	selectInput("{prefix}d2sub1", "Cell information to subset:", \n',
+			'	choices = {prefix}conf[grp == TRUE]$UI, \n',
+			'	selected = {prefix}def$grp1), \n',
+			'	uiOutput("{prefix}d2sub1.ui"),  \n',
+			'	actionButton("{prefix}d2sub1all", "Select all groups", class = "btn btn-primary"), \n',
+			'	actionButton("{prefix}d2sub1non", "Deselect all groups", class = "btn btn-primary") \n',
+			'	), br(), br(),\n\n\n',
+        
+
+			'actionButton("{prefix}d2tog", "Toggle graphics controls"),\n',
+			'conditionalPanel( \n',
+			'condition = "input.{prefix}d2tog % 2 == 1", \n',
+			'radioButtons("{prefix}d2cols", "Colour scheme:", \n',
+			'			choices = c("White-Red", "Blue-Yellow-Red", \n',
+			'			"Yellow-Green-Purple"), \n',
+			'			selected = "Blue-Yellow-Red"), \n',
+			'			radioButtons("{prefix}d2psz", "Plot size:", \n',
+			'			choices = c("Small", "Medium", "Large"), \n',
+			'			selected = "Medium", inline = TRUE), \n',
+			'radioButtons("{prefix}d2fsz", "Font size:", \n',
+			'			choices = c("Small", "Medium", "Large"), \n',
+			'			selected = "Medium", inline = TRUE)) \n',
+			'), # End of column (6 space) \n',
+			'column(9, h4(htmlOutput("{prefix}d2oupTxt")), \n',
+			'uiOutput("{prefix}d2oup.ui"), \n',
+			'downloadButton("{prefix}d2oup.pdf", "Download PDF"), \n',
+			'downloadButton("{prefix}d2oup.png", "Download PNG"), br(), \n',
+			'div(style="display:inline-block", \n',
+			'	numericInput("{prefix}d2oup.h", "PDF / PNG height:", width = "138px", \n',
+			'				min = 4, max = 20, value = 10, step = 0.5)),\n',
+			'div(style="display:inline-block", \n',
+			'numericInput("{prefix}d2oup.w", "PDF / PNG width:", width = "138px", \n',
+			'				min = 4, max = 20, value = 10, step = 0.5)) \n',
+			'		)  # End of column (6 space) \n',
+			'	)    # End of fluidRow (4 space) \n',
+			'),     # End of tab (2 space) \n',
+  
+			# Dave  End of Tab1.d2
+			 
+			 # end INSERT DAVE new tab panel 
+			 
              '   \n')
 }
 
@@ -1998,5 +2185,5 @@ wrUIga <- function(gaID) {
              '</script> \n')
 }
 
-
+#end writer.R
 
