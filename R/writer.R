@@ -2035,7 +2035,7 @@ wrUImain <- function(prefix, subst = "", ptsiz = "1.25") {
     ### Tab1.d2: Single gene expr 
 			' tabPanel( \n',
 			' HTML("Single Gene analysis"), \n',
-			' h4("Single gene expression bubbleplot / heatmap"), \n'
+			' h4("Single gene expression bubbleplot / heatmap"), \n',
 			' "In this tab, users can visualise the gene expression patterns of a", \n',
 			' "SINGLE gene grouped by categorical cell information (e.g. library / cluster).", br(),\n',
 			' "The normalised expression are averaged, log-transformed and then plotted.", \n',
